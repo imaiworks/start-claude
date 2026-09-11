@@ -79,8 +79,9 @@ Write-Host ("cwd に現れた英数ハイフン以外の文字: {0}" -f $(if ($s
 
 if (-not $seen.ContainsKey('.')) {
     Write-Host ''
-    Write-Host "'.' を含むパスが1件も無いため、'.' の潰れ方はこの実行では検証されていない。" -ForegroundColor Yellow
-    Write-Host "確かめるには、'.' を含むディレクトリを作ってそこで一度 claude を起動し、もう一度これを実行する。" -ForegroundColor Yellow
+    Write-Host "'.' を含むパスが1件も無いため、'.' の潰れ方は「この実行では」検証されていない。" -ForegroundColor Yellow
+    Write-Host "過去に別途確認した記録があるかは test/fixtures/README.md の「潰し規則の根拠」を見ること。" -ForegroundColor Yellow
+    Write-Host "この場で確かめるには、'.' を含むディレクトリを作ってそこで一度 claude を起動し、もう一度これを実行する。" -ForegroundColor Yellow
     Write-Host '  mkdir "$env:TEMP\rulecheck\www.example.com"' -ForegroundColor DarkGray
 }
 

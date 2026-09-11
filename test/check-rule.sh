@@ -84,8 +84,9 @@ printf 'cwd に現れた英数ハイフン以外の文字: %s\n' "${specials:-(�
 
 if [[ $specials != *.* ]]; then
     printf '\n'
-    printf "%s'.' を含むパスが1件も無いため、'.' の潰れ方はこの実行では検証されていない。%s\\n" "$c_yellow" "$c_reset"
-    printf "%s確かめるには、'.' を含むディレクトリを作ってそこで一度 claude を起動し、もう一度これを実行する。%s\\n" "$c_yellow" "$c_reset"
+    printf "%s'.' を含むパスが1件も無いため、'.' の潰れ方は「この実行では」検証されていない。%s\\n" "$c_yellow" "$c_reset"
+    printf '%s過去に別途確認した記録があるかは test/fixtures/README.md の「潰し規則の根拠」を見ること。%s\n' "$c_yellow" "$c_reset"
+    printf "%sこの場で確かめるには、'.' を含むディレクトリを作ってそこで一度 claude を起動し、もう一度これを実行する。%s\\n" "$c_yellow" "$c_reset"
     printf '%s  mkdir -p /tmp/rulecheck/www.example.com%s\n' "$c_gray" "$c_reset"
 fi
 
