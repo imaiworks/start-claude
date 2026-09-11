@@ -126,6 +126,39 @@ Z:\home\user\dev_env_wsl\webviewer        /home/user/dev_env_wsl/example.com
 - `awk` / `stat` / `sort`（coreutils と gawk・mawk いずれか）。それ以外の外部コマンドは使わない
 - `claude` が PATH に通っていること。見つからない場合は起動前にその旨を表示する
 
+## テスト
+
+パス復元と起動モードの回帰テスト。`claude` は PATH の先頭に置いた偽物に差し替えるので、本物は起動しない。各ケースはタイムアウト付きで走るので、ハングも検出できる。
+
+```powershell
+.\test\run-tests.ps1          # Windows
+```
+
+```bash
+./test/run-tests.sh           # Linux
+```
+
+失敗があると調査用に一時ディレクトリを残す（`-KeepWork` / `--keep` を付けると常に残す）。フィクスチャの内訳は [test/fixtures/README.md](test/fixtures/README.md) を参照。
+
+## 両版を揃える
+
+`start-claude.ps1` と `start-claude.sh` は同じ仕様を別々に実装している。**片方だけ直すと必ず食い違う**ので、次のどれかを触ったら両方を直し、両方のテストを走らせること。
+
+- 潰し規則（`ConvertTo-FlatName` / `_sc_flatten`）
+- 復元の手順（`ConvertFrom-ProjectDirName` / `_sc_resolve`・`_sc_walk`）
+- 既定モードと接尾辞 `c` / `n` / `r` / `d`
+- 走査するルートの決め方（`CLAUDE_CONFIG_DIR`）
+- 一覧の並び順と表示内容
+
+実際に起きた食い違いが2件ある。どちらも**相手側の環境のパスが混ざったとき**に露呈した。
+
+| 症状 | 影響 | 回帰テスト |
+| --- | --- | --- |
+| `.` を潰していなかった（ps1 のみ） | `C:\dev\foo.bar\baz` のような `.` 入りのパスで、ログ0件フォルダの復元が外れる | 「`.` を含むパスの復元」 |
+| 親を辿るループが `/` を含まないパスで止まらない（sh のみ） | `C:\Users\foo` 形式の `cwd` が1つでもあると無限ループ | 「一覧が出る / ハングしない」 |
+
+WSL から `/mnt/c/.../.claude/projects` を覗く、Windows から `Z:` 経由で WSL 側を見る、といった使い方があるため、**両方のパス形式が混ざる前提**で書くこと。テストのフィクスチャにも両形式を入れてある。
+
 ## メモ
 
 - `start-claude.ps1` は **UTF-8 BOM 付き** で保存する。Windows PowerShell 5.1 は BOM が無いスクリプトを ANSI として読むため、日本語が文字化けする

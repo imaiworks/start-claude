@@ -10,3 +10,6 @@
 # シェルスクリプトは必ず LF にする
 # (CRLF だと shebang の解釈に失敗し、ヒアドキュメントの終端も一致しなくなる)
 *.sh text eol=lf
+
+# テストのフィクスチャは両 OS で同じ内容を保ちたいので改行変換しない
+test/fixtures/projects/** -text
