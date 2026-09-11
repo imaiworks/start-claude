@@ -1,0 +1,8 @@
+# 既定: リポジトリ内は LF、チェックアウト時は環境に合わせる
+* text=auto
+
+# Windows 用のスクリプトは作業コピーを必ず CRLF にする
+# (cmd.exe は LF だけの .bat でラベル/goto を誤読することがある)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
