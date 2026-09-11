@@ -194,12 +194,17 @@ _sc_scan() {
     # 判明した cwd とその親ディレクトリを、名前復元のヒントとして貯める
     local -i i
     local cur
+    local parent
     for ((i = 0; i < ${#_sc_paths[@]}; i++)); do
         cur=${_sc_paths[i]%/}
         while [[ -n $cur && $cur != "/" ]]; do
             _sc_flatten "$cur"
             _sc_hints[$_sc_flat]=$cur
-            cur=${cur%/*}
+            # '/' を含まないパス (Windows 側が書いた C:\Users\foo など) では
+            # ${cur%/*} が縮まないため、進まなくなったら打ち切る
+            parent=${cur%/*}
+            [[ $parent == "$cur" ]] && break
+            cur=$parent
         done
     done
 

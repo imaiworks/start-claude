@@ -41,6 +41,7 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 .\start-claude.ps1 -Last            # 一覧を出さず、最後に使った場所で続きから
 .\start-claude.ps1 -Last -New       # 同じ場所で新しい会話
 .\start-claude.ps1 webviewer -Resume  # 絞り込み + 会話を選んで再開
+.\start-claude.ps1 -ProjectsRoot C:\path\to\projects  # 走査するルートを指定
 ```
 
 ### Linux
@@ -94,7 +95,7 @@ cch() { source /path/to/start-claude.sh "$@"; }
 
 ## 仕組み
 
-`.claude/projects`（Linux では `CLAUDE_CONFIG_DIR` があればそちら）にある各プロジェクトフォルダを走査するが、**フォルダ名から元のパスは復元できない**。Claude Code は `[a-zA-Z0-9-]` 以外の文字をすべて `-` に置き換えるので、区切りの `\` `/` も `_` も `.` も、区別がつかなくなっている。
+`.claude/projects`（`CLAUDE_CONFIG_DIR` があればそちら）にある各プロジェクトフォルダを走査するが、**フォルダ名から元のパスは復元できない**。Claude Code は `[a-zA-Z0-9-]` 以外の文字をすべて `-` に置き換えるので、区切りの `\` `/` も `_` も `.` も、区別がつかなくなっている。
 
 ```
 Z--home-user-dev-env-wsl-webviewer        -home-user-dev-env-wsl-example-com
@@ -132,7 +133,7 @@ Z:\home\user\dev_env_wsl\webviewer        /home/user/dev_env_wsl/example.com
 - `start-claude.sh` は BOM 無し・LF。CRLF だと shebang の解釈に失敗し、ヒアドキュメントの終端も一致しなくなる
 - 改行は `.gitattributes` で `*.bat` / `*.cmd` / `*.ps1` を `eol=crlf`、`*.sh` を `eol=lf` に固定している。LF だけの `.bat` は cmd.exe がラベルや `goto` を誤読することがあるため
 - PowerShell 5.1 からこのリポジトリのファイルを作るときは `-Encoding utf8` を明示する（`>` や `Out-File` の既定は UTF-16LE で、Git がバイナリ扱いしてしまう）
-- 潰し規則のうち `.` → `-` を、現時点で ps1 側の `ConvertTo-FlatName` は見ていない（`[:\\/_]` のみ）。`C:\dev\foo.bar\baz` のように途中に `.` を含むパスがあると、ログ0件フォルダの復元（上記 2.）が外れる。sh 側は `[a-zA-Z0-9-]` 以外をすべて潰す規則で実装済み
+- 潰し規則は ps1 / sh のどちらも `[a-zA-Z0-9-]` 以外をすべて `-` にする実装で揃えてある。ここを `[:\\/_]` だけにすると `C:\dev\foo.bar\baz` のように `.` を含むパスでログ0件フォルダの復元（上記 2.）が外れる
 
 ## どこからでも呼びたいとき
 

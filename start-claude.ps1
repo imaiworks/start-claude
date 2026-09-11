@@ -24,7 +24,8 @@
     claude --resume で起動する (会話を選んで再開)。
 
 .PARAMETER ProjectsRoot
-    走査するルート。既定は %USERPROFILE%\.claude\projects。
+    走査するルート。既定は %CLAUDE_CONFIG_DIR%\projects
+    (未設定なら %USERPROFILE%\.claude\projects)。
 
 .PARAMETER Launcher
     start-claude.bat から呼ばれたときに付く内部用スイッチ。
@@ -49,7 +50,7 @@ param(
     [switch]$Continue,
     [switch]$New,
     [switch]$Resume,
-    [string]$ProjectsRoot = (Join-Path $env:USERPROFILE '.claude\projects'),
+    [string]$ProjectsRoot,
     [switch]$Launcher
 )
 
@@ -92,10 +93,13 @@ function Get-SessionInfo {
     return [pscustomobject]@{ Cwd = $cwd; FirstPrompt = $prompt }
 }
 
-# --- 実パス -> フォルダ名 と同じ潰し方 (':' '\' '/' '_' がすべて '-' になる) ----
+# --- 実パス -> フォルダ名 と同じ潰し方 ------------------------------------------
+#     Claude Code は [a-zA-Z0-9-] 以外をすべて '-' に置き換える。
+#     ':' '\' '/' '_' だけでなく '.' も潰れる (example.com -> example-com)。
+#     '-' は文字クラスの末尾に置いて範囲指定と解釈されないようにしている。
 function ConvertTo-FlatName {
     param([string]$Path)
-    return ($Path -replace '[:\\/_]', '-')
+    return ($Path -replace '[^A-Za-z0-9-]', '-')
 }
 
 # --- jsonl が無いときのフォールバック: フォルダ名から推測する -------------------
@@ -275,6 +279,13 @@ function Start-Project {
 }
 
 # --- 本体 ---------------------------------------------------------------------
+if (-not $ProjectsRoot) {
+    # Claude Code 本体と同じく CLAUDE_CONFIG_DIR を優先する (sh 版と挙動を合わせる)
+    $configDir = $env:CLAUDE_CONFIG_DIR
+    if (-not $configDir) { $configDir = Join-Path $env:USERPROFILE '.claude' }
+    $ProjectsRoot = Join-Path $configDir 'projects'
+}
+
 $projects = @(Get-ClaudeProject -Root $ProjectsRoot)
 
 if ($Filter) {
