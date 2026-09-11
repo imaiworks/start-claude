@@ -149,7 +149,7 @@ _sc_resolve() {
 
 # --- プロジェクト一覧を集める -------------------------------------------------
 _sc_scan() {
-    local root=$1 dir name epoch count first
+    local root=$1 dir name epoch count first found_cwd found_prompt
     local -a logfiles entries
 
     if [[ ! -d $root ]]; then
@@ -176,10 +176,19 @@ _sc_scan() {
         if ((count > 0)); then
             mapfile -t entries < <(stat -c '%Y	%n' -- "${logfiles[@]}" 2>/dev/null | sort -rn)
             epoch=${entries[0]%%$'\t'*}
+            # 新しいログから順に見る。cwd と見出し用のプロンプトは別々のログに
+            # あることがあるので (最新セッションが cwd だけで終わっている等)、
+            # 両方そろうまで古いログも見る。
+            found_cwd=""
+            found_prompt=""
             for first in "${entries[@]}"; do
                 _sc_session_info "${first#*$'\t'}"
-                [[ -n $_sc_cwd ]] && break
+                [[ -z $found_cwd ]] && found_cwd=$_sc_cwd
+                [[ -z $found_prompt ]] && found_prompt=$_sc_prompt
+                [[ -n $found_cwd && -n $found_prompt ]] && break
             done
+            _sc_cwd=$found_cwd
+            _sc_prompt=$found_prompt
         else
             epoch=$(stat -c '%Y' -- "$dir" 2>/dev/null)
         fi
@@ -218,13 +227,28 @@ _sc_scan() {
 }
 
 # --- 表示補助 -----------------------------------------------------------------
+#     幅は「文字数」で数える。UTF-8 ロケールなら ${#text} や ${text:i:1} が
+#     そのまま文字単位になるが、LC_ALL=C などバイト単位になる環境でも
+#     文字の途中で切らないよう、継続バイト (0x80-0xBF) は数えずに読み飛ばす。
+#     UTF-8 ロケールでは継続バイトが単独で現れないので、結果は変わらない。
 _sc_ellipsize() {
-    local text=$1 width=$2
-    if ((${#text} > width)); then
-        _sc_ell="${text:0:width - 1}..."
-    else
-        _sc_ell=$text
-    fi
+    local text=$1 width=$2 i=0 n=0 c out=''
+
+    while ((i < ${#text})); do
+        c=${text:i:1}
+        if [[ $c != [$'\x80'-$'\xbf'] ]]; then
+            # 次の文字を足すと幅を超えるなら、ここで打ち切る
+            if ((n == width - 1)); then
+                _sc_ell=$out...
+                return
+            fi
+            n=$((n + 1))
+        fi
+        out+=$c
+        i=$((i + 1))
+    done
+
+    _sc_ell=$text
 }
 
 _sc_setup_colors() {
@@ -335,6 +359,7 @@ _sc_usage() {
   -c, --continue          claude --continue で起動する (既定)
   -n, --new               --continue を付けず、新しい会話として起動する
   -r, --resume            claude --resume で起動する (会話を選んで再開)
+  -d, --cd                claude を起動せず、そのディレクトリへ移動するだけ
       --root PATH         走査するルート (既定: ${CLAUDE_CONFIG_DIR:-~/.claude}/projects)
   -h, --help              このヘルプ
 
@@ -344,6 +369,7 @@ _sc_usage() {
   start-claude.sh -l                # 最後に使った場所で続きから
   start-claude.sh -l -n             # 同じ場所で新しい会話
   start-claude.sh webviewer -r      # 絞り込み + 会話を選んで再開
+  start-claude.sh -l -d             # 最後に使った場所へ移動するだけ
 
 「番号+d (cd だけ)」を親シェルに効かせるには source して使う。
 ~/.bashrc に以下を追記しておくとよい:
@@ -368,11 +394,23 @@ _sc_main() {
             -c | --continue) mode=continue ;;
             -n | --new) mode=new ;;
             -r | --resume) mode=resume ;;
+            -d | --cd) mode=cd ;;
             --root)
+                # 値を取り損ねると黙って既定のルートを見てしまうので弾く
+                if (($# < 2)); then
+                    printf '%s には値が必要です\n' "$1" >&2
+                    return 2
+                fi
                 root=$2
                 shift
                 ;;
-            --root=*) root=${1#--root=} ;;
+            --root=*)
+                root=${1#--root=}
+                if [[ -z $root ]]; then
+                    printf -- '--root には値が必要です\n' >&2
+                    return 2
+                fi
+                ;;
             -*)
                 printf '不明なオプション: %s\n' "$1" >&2
                 return 2
@@ -433,6 +471,7 @@ _sc_main() {
     case $mode in
         continue) modelabel='続きから / claude --continue' ;;
         resume) modelabel='会話を選んで再開 / claude --resume' ;;
+        cd) modelabel='cd するだけ / claude は起動しない' ;;
         *) modelabel='新しい会話 / claude' ;;
     esac
 

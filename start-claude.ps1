@@ -23,6 +23,9 @@
 .PARAMETER Resume
     claude --resume で起動する (会話を選んで再開)。
 
+.PARAMETER CdOnly
+    claude を起動せず、そのディレクトリへ移動するだけにする。
+
 .PARAMETER ProjectsRoot
     走査するルート。既定は %CLAUDE_CONFIG_DIR%\projects
     (未設定なら %USERPROFILE%\.claude\projects)。
@@ -41,6 +44,10 @@
 .EXAMPLE
     # PC を落としてしまった後などに、最後に触っていた場所で会話を再開する
     .\start-claude.ps1 -Last
+
+.EXAMPLE
+    # 最後に使った場所へ移動するだけ (claude は起動しない)
+    .\start-claude.ps1 -Last -CdOnly
 #>
 [CmdletBinding()]
 param(
@@ -50,6 +57,7 @@ param(
     [switch]$Continue,
     [switch]$New,
     [switch]$Resume,
+    [switch]$CdOnly,
     [string]$ProjectsRoot,
     [switch]$Launcher
 )
@@ -152,13 +160,14 @@ function Get-ClaudeProject {
 
         if ($logs.Count -gt 0) {
             $lastUsed = $logs[0].LastWriteTime
+            # 新しいログから順に見る。cwd と見出し用のプロンプトは別々のログに
+            # あることがあるので (最新セッションが cwd だけで終わっている等)、
+            # 両方そろうまで古いログも見る。
             foreach ($log in $logs) {
                 $info = Get-SessionInfo -JsonlPath $log.FullName
-                if ($info.Cwd) {
-                    $path = $info.Cwd
-                    $prompt = $info.FirstPrompt
-                    break
-                }
+                if (-not $path) { $path = $info.Cwd }
+                if (-not $prompt) { $prompt = $info.FirstPrompt }
+                if ($path -and $prompt) { break }
             }
         }
 
@@ -198,8 +207,13 @@ function Get-Ellipsized {
     param([string]$Text, [int]$Width)
 
     if (-not $Text) { return '' }
-    if ($Text.Length -gt $Width) { return $Text.Substring(0, $Width - 1) + '...' }
-    return $Text
+    if ($Text.Length -le $Width) { return $Text }
+
+    # .NET の文字列は UTF-16 なので、絵文字などサロゲートペアの間で切ると壊れる。
+    # 切り口が上位サロゲートなら 1 つ手前に下げる。
+    $cut = $Width - 1
+    if ([char]::IsHighSurrogate($Text[$cut - 1])) { $cut-- }
+    return $Text.Substring(0, $cut) + '...'
 }
 
 function Test-TargetDirectory {
@@ -301,15 +315,21 @@ $defaultMode = 'continue'
 if ($New)      { $defaultMode = 'new' }
 if ($Continue) { $defaultMode = 'continue' }
 if ($Resume)   { $defaultMode = 'resume' }
+if ($CdOnly)   { $defaultMode = 'cd' }
 
 if ($Last) {
-    Start-Project -Project $projects[0] -Mode $defaultMode
+    if ($defaultMode -eq 'cd') {
+        Enter-DirectoryOnly -Path $projects[0].Path
+    } else {
+        Start-Project -Project $projects[0] -Mode $defaultMode
+    }
     return
 }
 
 $modeLabel = switch ($defaultMode) {
     'continue' { '続きから / claude --continue' }
     'resume'   { '会話を選んで再開 / claude --resume' }
+    'cd'       { 'cd するだけ / claude は起動しない' }
     default    { '新しい会話 / claude' }
 }
 

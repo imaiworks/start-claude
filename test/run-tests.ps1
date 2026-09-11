@@ -98,19 +98,37 @@ Set-Content -LiteralPath $logLive -Encoding UTF8 `
 $dirLiveSub = Join-Path $root (ConvertTo-FlatName $liveSub)
 New-Item -ItemType Directory -Path (Join-Path $dirLiveSub 'memory') -Force | Out-Null
 
+# 見出しに使うプロンプトが最新ログには無く、古いログにだけある場合
+$two = Join-Path $work 'twolog'
+New-Item -ItemType Directory -Path $two -Force | Out-Null
+$dirTwo = Join-Path $root (ConvertTo-FlatName $two)
+New-Item -ItemType Directory -Path $dirTwo -Force | Out-Null
+$twoJson = $two.Replace('\', '\\')
+$logTwoOld = Join-Path $dirTwo '00000000-0000-0000-0000-0000000000c1.jsonl'
+$logTwoNew = Join-Path $dirTwo '00000000-0000-0000-0000-0000000000c2.jsonl'
+Set-Content -LiteralPath $logTwoOld -Encoding UTF8 `
+    -Value ('{"type":"user","message":{"role":"user","content":"older-log-prompt"},"cwd":"' + $twoJson + '"}')
+Set-Content -LiteralPath $logTwoNew -Encoding UTF8 `
+    -Value ('{"type":"system","cwd":"' + $twoJson + '"}')
+
 # 一覧は最終更新の新しい順に並ぶ。番号を決め打ちにするため明示的に時刻を振る。
 # ログがあるフォルダはログの時刻、無いフォルダはフォルダ自身の時刻が使われる。
 $base = Get-Date '2026-01-01 12:00:00'
 Set-ItemProperty -LiteralPath $logLive -Name LastWriteTime -Value $base
+Set-ItemProperty -LiteralPath $logTwoNew -Name LastWriteTime -Value $base.AddMinutes(-30)
+Set-ItemProperty -LiteralPath $logTwoOld -Name LastWriteTime -Value $base.AddMinutes(-31)
+
 foreach ($d in (Get-ChildItem -LiteralPath $root -Directory)) {
+    if ($d.FullName -eq $dirLive -or $d.FullName -eq $dirTwo -or $d.FullName -eq $dirLiveSub) { continue }
     $logs = @(Get-ChildItem -LiteralPath $d.FullName -Filter '*.jsonl' -File)
-    if ($d.FullName -eq $dirLiveSub) { Set-ItemProperty -LiteralPath $d.FullName -Name LastWriteTime -Value $base.AddMinutes(-1) }
-    elseif ($logs.Count -gt 0 -and $d.FullName -ne $dirLive) {
+    if ($logs.Count -gt 0) {
         Set-ItemProperty -LiteralPath $logs[0].FullName -Name LastWriteTime -Value $base.AddMinutes(-10)
-    } elseif ($logs.Count -eq 0 -and $d.FullName -ne $dirLiveSub) {
+    } else {
         Set-ItemProperty -LiteralPath $d.FullName -Name LastWriteTime -Value $base.AddMinutes(-20)
     }
 }
+# フォルダの時刻は中身を作った後に振る (子を作ると親の時刻が更新されるため)
+Set-ItemProperty -LiteralPath $dirLiveSub -Name LastWriteTime -Value $base.AddMinutes(-1)
 
 # 上の時刻付けで確定する一覧の並び
 $IDX_LIVE = 1      # 会話ログ1件・実在・パスに '.' を含む
@@ -151,7 +169,7 @@ function Invoke-Launcher {
 
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         try { $p.Kill() } catch { }
-        return [pscustomobject]@{ Output = ''; TimedOut = $true }
+        return [pscustomobject]@{ Output = ''; TimedOut = $true; ExitCode = -1 }
     }
 
     $out = ''
@@ -160,7 +178,7 @@ function Invoke-Launcher {
             $out += [string](Get-Content -LiteralPath $f -Raw -ErrorAction SilentlyContinue)
         }
     }
-    return [pscustomobject]@{ Output = $out; TimedOut = $false }
+    return [pscustomobject]@{ Output = $out; TimedOut = $false; ExitCode = $p.ExitCode }
 }
 
 # 偽 claude に渡った引数。起動していなければ $null。
@@ -247,6 +265,24 @@ $env:CLAUDE_CONFIG_DIR = $work
 $r = Invoke-Launcher -StdIn 'q' -UseConfigDirEnv
 Remove-Item Env:\CLAUDE_CONFIG_DIR
 Assert-True '環境変数の projects を走査する' ($r.Output -match 'foo\.bar[\\/]baz') $r.Output
+
+# =============================================================================
+Write-Case '見出しのプロンプトは古いログからも拾う'
+# 最新ログに cwd しか無い場合でも、古いログから最初のプロンプトを探す。
+Assert-True '古いログのプロンプトが一覧に出る' ($menu.Output -match 'older-log-prompt') $menu.Output
+
+# =============================================================================
+Write-Case '-CdOnly / -Last'
+$r = Invoke-Launcher -StdIn '' -Arguments @('-Last', '-CdOnly')
+Assert-True 'claude を起動しない' ($null -eq (Get-InvokedArgs $r.Output)) $r.Output
+Assert-True '移動先を表示する' ($r.Output -match 'foo\.bar[\\/]baz') $r.Output
+
+# =============================================================================
+Write-Case '-ProjectsRoot に値が無ければエラー'
+# 黙って既定のルートを見てしまうと、別の場所の一覧が出て分かりにくい。
+$r = Invoke-Launcher -StdIn 'q' -Arguments @('-ProjectsRoot')
+Assert-True '正常終了しない' ($r.ExitCode -ne 0) ("ExitCode={0}" -f $r.ExitCode)
+Assert-True 'claude を起動しない' ($null -eq (Get-InvokedArgs $r.Output)) $r.Output
 
 # =============================================================================
 Write-Case 'パスを直接指定できる'

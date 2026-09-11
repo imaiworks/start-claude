@@ -41,6 +41,7 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 .\start-claude.ps1 -Last            # 一覧を出さず、最後に使った場所で続きから
 .\start-claude.ps1 -Last -New       # 同じ場所で新しい会話
 .\start-claude.ps1 webviewer -Resume  # 絞り込み + 会話を選んで再開
+.\start-claude.ps1 -Last -CdOnly    # 最後に使った場所へ移動するだけ
 .\start-claude.ps1 -ProjectsRoot C:\path\to\projects  # 走査するルートを指定
 ```
 
@@ -52,10 +53,11 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 ./start-claude.sh -l                # 一覧を出さず、最後に使った場所で続きから
 ./start-claude.sh -l -n             # 同じ場所で新しい会話
 ./start-claude.sh webviewer -r      # 絞り込み + 会話を選んで再開
+./start-claude.sh -l -d             # 最後に使った場所へ移動するだけ
 ./start-claude.sh --root /path/to/projects  # 走査するルートを指定
 ```
 
-オプションは `-l/--last` `-c/--continue` `-n/--new` `-r/--resume` `-h/--help`。
+オプションは `-l/--last` `-c/--continue` `-n/--new` `-r/--resume` `-d/--cd` `--root` `-h/--help`。
 
 一覧が出たあとの入力:
 
@@ -69,7 +71,7 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 | `C:\path\to\dir` | 一覧に無い場所を直接指定（末尾に半角空白 + `c`/`n`/`r`/`d` でモード指定） |
 | 空 Enter / `q` | 終了 |
 
-`-Continue` / `-New` / `-Resume` をコマンドラインで渡すと、番号だけを入力したときの既定モードが変わる。
+`-Continue` / `-New` / `-Resume` / `-CdOnly`（sh は `-c` / `-n` / `-r` / `-d`）をコマンドラインで渡すと、番号だけを入力したときの既定モードが変わる。`-Last` と組み合わせれば一覧を出さずにそのモードで実行する。
 
 ### 一覧の見方
 

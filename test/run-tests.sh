@@ -99,17 +99,28 @@ printf '%s\n' \
 dir_live_sub=$root/$(flatten "$live_sub")
 mkdir -p "$dir_live_sub/memory"
 
+# 見出しに使うプロンプトが最新ログには無く、古いログにだけある場合
+two=$work/twolog
+mkdir -p "$two"
+dir_two=$root/$(flatten "$two")
+mkdir -p "$dir_two"
+log_two_old=$dir_two/00000000-0000-0000-0000-0000000000c1.jsonl
+log_two_new=$dir_two/00000000-0000-0000-0000-0000000000c2.jsonl
+printf '%s\n' \
+    "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"older-log-prompt\"},\"cwd\":\"$two\"}" \
+    > "$log_two_old"
+printf '%s\n' "{\"type\":\"system\",\"cwd\":\"$two\"}" > "$log_two_new"
+
 # 一覧は最終更新の新しい順に並ぶ。番号を決め打ちにするため明示的に時刻を振る。
 # ログがあるディレクトリはログの時刻、無いディレクトリは自身の時刻が使われる。
 stamp() { touch -d "$1" -- "$2"; }
 stamp '2026-01-01 12:00:00' "$log_live"
+stamp '2026-01-01 11:30:00' "$log_two_new"
+stamp '2026-01-01 11:29:00' "$log_two_old"
+
 for d in "$root"/*; do
     [[ -d $d ]] || continue
-    [[ $d == "$dir_live" ]] && continue
-    if [[ $d == "$dir_live_sub" ]]; then
-        stamp '2026-01-01 11:59:00' "$d"
-        continue
-    fi
+    [[ $d == "$dir_live" || $d == "$dir_two" || $d == "$dir_live_sub" ]] && continue
     shopt -s nullglob
     logs=("$d"/*.jsonl)
     shopt -u nullglob
@@ -119,6 +130,8 @@ for d in "$root"/*; do
         stamp '2026-01-01 11:40:00' "$d"
     fi
 done
+# ディレクトリの時刻は中身を作った後に振る (子を作ると親の時刻が更新されるため)
+stamp '2026-01-01 11:59:00' "$dir_live_sub"
 
 # 上の時刻付けで確定する一覧の並び
 IDX_LIVE=1    # 会話ログ1件・実在・パスに '.' を含む
@@ -252,6 +265,35 @@ assert_not_invoked '一致しなければ何も起動しない'
 case_of 'CLAUDE_CONFIG_DIR を見る'
 run_launcher_env q
 assert_match '環境変数の projects を走査する' 'foo\.bar/baz' "$_out"
+
+# =============================================================================
+case_of '見出しのプロンプトは古いログからも拾う'
+# 最新ログに cwd しか無い場合でも、古いログから最初のプロンプトを探す。
+assert_match '古いログのプロンプトが一覧に出る' 'older-log-prompt' "$menu"
+
+# =============================================================================
+case_of '--cd / --last'
+cd_out=$(
+    cd -- "$work" || exit 1
+    printf '\n' | {
+        source "$launcher" --root "$root" --last --cd > /dev/null 2>&1
+        pwd
+    }
+)
+assert_match 'cd 先が foo.bar/baz になる' 'foo\.bar/baz$' "$cd_out"
+
+run_launcher '' --last --cd
+assert_not_invoked 'claude を起動しない'
+
+# =============================================================================
+case_of '--root に値が無ければエラー'
+# 黙って既定のルートを見てしまうと、別の場所の一覧が出て分かりにくい。
+_out=$(printf 'q\n' | timeout "$TIMEOUT" bash "$launcher" --root 2>&1); _rc=$?
+assert_rc_ne '正常終了しない' 0 "$_rc" "$_out"
+assert_match '値が必要である旨を出す' '値が必要' "$_out"
+
+_out=$(printf 'q\n' | timeout "$TIMEOUT" bash "$launcher" --root= 2>&1); _rc=$?
+assert_rc_ne '--root= (空) も弾く' 0 "$_rc" "$_out"
 
 # =============================================================================
 case_of 'パスを直接指定できる'
