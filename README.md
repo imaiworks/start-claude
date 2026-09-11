@@ -142,6 +142,20 @@ Z:\home\user\dev_env_wsl\webviewer        /home/user/dev_env_wsl/example.com
 
 失敗があると調査用に一時ディレクトリを残す（`-KeepWork` / `--keep` を付けると常に残す）。フィクスチャの内訳は [test/fixtures/README.md](test/fixtures/README.md) を参照。
 
+### 潰し規則そのものの確認
+
+上のテストは**実装が仕様どおり動くか**しか見ていない。フィクスチャも規則を前提に作ってあるので、規則そのものの検証にはならない（循環している）。Claude Code が本当にその規則で潰しているかは、実データと突き合わせるしかない。
+
+```powershell
+.\test\check-rule.ps1         # Windows
+```
+
+```bash
+./test/check-rule.sh          # Linux
+```
+
+`~/.claude/projects` の実フォルダ名と、その中の `jsonl` の `cwd` を突き合わせ、不一致があれば終了コード 1 を返す。**全件一致しても `cwd` に現れなかった文字については何も言えない**ので、実際に現れた文字も報告する。`.` が含まれていなければその旨を警告するので、`.` を含むディレクトリで一度 claude を起動してから再実行すればよい。
+
 ## 両版を揃える
 
 `start-claude.ps1` と `start-claude.sh` は同じ仕様を別々に実装している。**片方だけ直すと必ず食い違う**ので、次のどれかを触ったら両方を直し、両方のテストを走らせること。
