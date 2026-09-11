@@ -1,6 +1,6 @@
 # start-claude
 
-過去に Claude Code を起動したディレクトリを一覧から選び、その場所へ移動して `claude` を起動する Windows 用ランチャー。
+過去に Claude Code を起動したディレクトリを一覧から選び、その場所へ移動して `claude` を起動するランチャー。Windows (PowerShell) 版と Linux (bash) 版がある。
 
 PC を再起動したあとや、うっかりセッションを閉じてしまったあとに「どこで作業していたか」を思い出して `cd` するのが面倒、というのを解消するためのもの。既定の動作は `claude --continue`（そのディレクトリの直前の会話を再開）。
 
@@ -25,10 +25,15 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 
 | ファイル | 用途 |
 | --- | --- |
-| `start-claude.ps1` | 本体 |
+| `start-claude.ps1` | Windows 用の本体 |
 | `start-claude.bat` | cmd / ダブルクリック用のラッパー。引数はそのまま ps1 に渡る |
+| `start-claude.sh` | Linux 用の本体 |
+
+一覧の作り方も操作も両者で揃えてあるので、以降の説明は特記がなければ共通。
 
 ## 使い方
+
+### Windows
 
 ```powershell
 .\start-claude.ps1                  # 一覧から選ぶ
@@ -37,6 +42,19 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 .\start-claude.ps1 -Last -New       # 同じ場所で新しい会話
 .\start-claude.ps1 webviewer -Resume  # 絞り込み + 会話を選んで再開
 ```
+
+### Linux
+
+```bash
+./start-claude.sh                   # 一覧から選ぶ
+./start-claude.sh sampleapp         # キーワードで絞り込む
+./start-claude.sh -l                # 一覧を出さず、最後に使った場所で続きから
+./start-claude.sh -l -n             # 同じ場所で新しい会話
+./start-claude.sh webviewer -r      # 絞り込み + 会話を選んで再開
+./start-claude.sh --root /path/to/projects  # 走査するルートを指定
+```
+
+オプションは `-l/--last` `-c/--continue` `-n/--new` `-r/--resume` `-h/--help`。
 
 一覧が出たあとの入力:
 
@@ -60,42 +78,72 @@ PC を再起動したあとや、うっかりセッションを閉じてしま�
 
 ### cd だけの挙動について
 
-PowerShell から `.\start-claude.ps1` として実行した場合、`d` を選ぶとスクリプト終了後もその場所に留まる（ドットソース不要）。
+**Windows**: PowerShell から `.\start-claude.ps1` として実行した場合、`d` を選ぶとスクリプト終了後もその場所に留まる（ドットソース不要）。
 
 `start-claude.bat` 経由だと子プロセスなので普通に `cd` しても無駄になる。そのため bat は内部スイッチ `-Launcher` を渡しており、`d` のときは同じウィンドウで移動先の対話シェルを開き直す。
 
+**Linux**: 子プロセスからは親シェルの cwd を変えられないので、`source` して使う。`~/.bashrc` に関数をひとつ足しておくのがいちばん楽。
+
+```bash
+cch() { source /path/to/start-claude.sh "$@"; }
+```
+
+これで `cch` から `3d` を選ぶと、そのシェル自身が移動する。`source` せずに `./start-claude.sh` として直接実行した場合は、移動先で対話シェルを開き直して代用する（抜けるには `exit`）。
+
+スクリプトは自分が `source` されたかを検出して動きを変え、終了時に内部で使った関数と変数をすべて `unset` するので、呼び出し元のシェルには何も残らない。`nullglob` / `dotglob` も元の設定に戻す。
+
 ## 仕組み
 
-`%USERPROFILE%\.claude\projects` にある各プロジェクトフォルダを走査するが、**フォルダ名から元のパスは復元できない**。`\` も `_` もどちらも `-` に潰されているため。
+`.claude/projects`（Linux では `CLAUDE_CONFIG_DIR` があればそちら）にある各プロジェクトフォルダを走査するが、**フォルダ名から元のパスは復元できない**。Claude Code は `[a-zA-Z0-9-]` 以外の文字をすべて `-` に置き換えるので、区切りの `\` `/` も `_` も `.` も、区別がつかなくなっている。
 
 ```
-Z--home-user-dev-env-wsl-webviewer
-  ↓ 実体は
-Z:\home\user\dev_env_wsl\webviewer
+Z--home-user-dev-env-wsl-webviewer        -home-user-dev-env-wsl-example-com
+  ↓ 実体は                                  ↓ 実体は
+Z:\home\user\dev_env_wsl\webviewer        /home/user/dev_env_wsl/example.com
 ```
 
-そこでセッションログ `*.jsonl` の各行に記録されている `cwd` フィールドを正としてパスを取得している。ログは行単位で読み、`cwd` と最初のプロンプトが見つかった時点で打ち切るので、10MB を超えるログでも待たされない。
+そこでセッションログ `*.jsonl` の各行に記録されている `cwd` フィールドを正としてパスを取得している。ログは行単位で読み、`cwd` と最初のプロンプトが見つかった時点で打ち切るので、10MB を超えるログでも待たされない（実測: 16 プロジェクト・最大 2.7MB のログを含めて 0.1 秒未満）。
 
-会話ログが1件も残っていないフォルダ（`memory` だけ残っている場合）は `cwd` が取れないため、他プロジェクトで判明した実パスとその親ディレクトリを手がかりに、最長前方一致でパスを組み立てる。上の例が分かっていれば `Z--home-user-dev-env-wsl-todoapp` も `Z:\home\user\dev_env_wsl\todoapp` として正しく復元できる。
+会話ログが1件も残っていないフォルダ（`memory` だけ残っている場合）は `cwd` が取れないので、次の順に復元する。
+
+1. **実ファイルシステムを辿る**（Linux 版のみ）。`/` から順に、各階層の実在するディレクトリ名を同じ規則で潰して、フォルダ名の続きと一致する枝を選ぶ。当たれば実在が保証されたパスになり、`.` や `_` 入りのディレクトリ名も正しく戻る
+2. **判明済みのパスから推測する**。他プロジェクトで分かった実パスとその親ディレクトリを手がかりに、最長前方一致でパスを組み立てる。上の例が分かっていれば `Z--home-user-dev-env-wsl-todoapp` も `Z:\home\user\dev_env_wsl\todoapp` として正しく復元できる。すでに消えたディレクトリはここで拾う
+3. どちらも当たらなければ、`-` をそのまま区切りとみなす
 
 また、会話ログが0件の場所で `--continue` しても再開できないので、その場合は警告を出して自動的に新しい会話へフォールバックする。
 
 ## 動作要件
 
+### Windows
+
 - Windows PowerShell 5.1 以降（`powershell.exe`）
+- `claude` が PATH に通っていること。見つからない場合は起動前にその旨を表示する
+
+### Linux
+
+- bash 4.2 以降（連想配列と `printf '%(...)T'` を使っている）
+- `awk` / `stat` / `sort`（coreutils と gawk・mawk いずれか）。それ以外の外部コマンドは使わない
 - `claude` が PATH に通っていること。見つからない場合は起動前にその旨を表示する
 
 ## メモ
 
 - `start-claude.ps1` は **UTF-8 BOM 付き** で保存する。Windows PowerShell 5.1 は BOM が無いスクリプトを ANSI として読むため、日本語が文字化けする
 - `start-claude.bat` は BOM 無し・CRLF。BOM 付きだと cmd.exe が1行目の解釈に失敗することがある
-- 改行は `.gitattributes` で `*.bat` / `*.cmd` / `*.ps1` を `eol=crlf` に固定している。LF だけの `.bat` は cmd.exe がラベルや `goto` を誤読することがあるため
+- `start-claude.sh` は BOM 無し・LF。CRLF だと shebang の解釈に失敗し、ヒアドキュメントの終端も一致しなくなる
+- 改行は `.gitattributes` で `*.bat` / `*.cmd` / `*.ps1` を `eol=crlf`、`*.sh` を `eol=lf` に固定している。LF だけの `.bat` は cmd.exe がラベルや `goto` を誤読することがあるため
 - PowerShell 5.1 からこのリポジトリのファイルを作るときは `-Encoding utf8` を明示する（`>` や `Out-File` の既定は UTF-16LE で、Git がバイナリ扱いしてしまう）
+- 潰し規則のうち `.` → `-` を、現時点で ps1 側の `ConvertTo-FlatName` は見ていない（`[:\\/_]` のみ）。`C:\dev\foo.bar\baz` のように途中に `.` を含むパスがあると、ログ0件フォルダの復元（上記 2.）が外れる。sh 側は `[a-zA-Z0-9-]` 以外をすべて潰す規則で実装済み
 
 ## どこからでも呼びたいとき
 
-PATH の通ったフォルダに置くか、PowerShell プロファイルに関数を足す。
+Windows は PATH の通ったフォルダに置くか、PowerShell プロファイルに関数を足す。
 
 ```powershell
 function cch { & 'C:\tools\start-claude\start-claude.ps1' @args }
+```
+
+Linux は `~/.bashrc` に関数を足す。`d`（cd だけ）を効かせるために、PATH に置くのではなく `source` する形にしておくこと。
+
+```bash
+cch() { source ~/tools/start-claude/start-claude.sh "$@"; }
 ```

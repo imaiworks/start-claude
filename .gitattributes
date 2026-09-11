@@ -6,3 +6,7 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# シェルスクリプトは必ず LF にする
+# (CRLF だと shebang の解釈に失敗し、ヒアドキュメントの終端も一致しなくなる)
+*.sh text eol=lf
